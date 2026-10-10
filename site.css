@@ -1,0 +1,127 @@
+/* Backtrail support site: the Field Map look from the Backtrail design system.
+   Map-grid paper, fell green, waymark yellow for the way home. Overpass is self-hosted (OFL). */
+
+@font-face {
+  font-family: "Overpass";
+  src: url("fonts/Overpass-Variable.ttf") format("truetype");
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Overpass Mono";
+  src: url("fonts/OverpassMono-Variable.ttf") format("truetype");
+  font-weight: 300 700;
+  font-display: swap;
+}
+
+:root {
+  --surface: #f3f5f1;
+  --raised: #ffffff;
+  --ink: #142019;
+  --ink-muted: #4a5a50;
+  --line: #c4cec6;
+  --fell: #1f3a2c;
+  --on-fell: #ffffff;
+  --waymark: #f2c230;
+  --on-waymark: #142019;
+  --rescue: #c2361a;
+  --link: #2d6a9f;
+  --grid: rgba(31, 58, 44, 0.06);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: #0e1411;
+    --raised: #17201b;
+    --ink: #e8eee9;
+    --ink-muted: #a2b1a7;
+    --line: #33443a;
+    --fell: #2f5040;
+    --waymark: #f5cb45;
+    --rescue: #ff6b47;
+    --link: #6ba6d9;
+    --grid: rgba(232, 238, 233, 0.05);
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding-inline: 16px;
+  background-color: var(--surface);
+  /* Map grid: 1 km squares. */
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 48px 48px;
+  color: var(--ink);
+  font: 17px/1.55 "Overpass", system-ui, -apple-system, sans-serif;
+}
+
+.wrap { max-width: 680px; margin: 0 auto; }
+
+.masthead { padding-block: 48px 24px; }
+.masthead img { width: 112px; height: 112px; border-radius: 26px; display: block; }
+.masthead h1 { font-size: 48px; line-height: 1.05; font-weight: 800; margin: 20px 0 4px; letter-spacing: -0.01em; }
+.masthead .tagline { font-size: 22px; font-weight: 700; margin: 0 0 8px; }
+.masthead .line { color: var(--ink-muted); margin: 0 0 20px; max-width: 34em; }
+
+.badge {
+  display: inline-block;
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: var(--fell);
+  color: var(--on-fell);
+  font-weight: 700;
+}
+
+h2 { font-size: 26px; font-weight: 800; margin: 40px 0 12px; text-wrap: balance; }
+p { margin: 0 0 14px; }
+a { color: var(--link); text-underline-offset: 3px; }
+a:focus-visible, summary:focus-visible { outline: 2px solid var(--link); outline-offset: 3px; border-radius: 4px; }
+ul { padding-left: 1.2em; margin: 0 0 14px; }
+li { margin-bottom: 6px; }
+.mono { font-family: "Overpass Mono", ui-monospace, Menlo, monospace; font-size: 0.92em; }
+
+.note {
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin: 0 0 14px;
+}
+.note strong { color: var(--rescue); }
+.note p:last-child { margin-bottom: 0; }
+
+details {
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin: 0 0 10px;
+  padding: 0 18px;
+}
+summary {
+  cursor: pointer;
+  font-weight: 700;
+  padding: 14px 0;
+  list-style-position: inside;
+}
+details[open] summary { border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+details p:last-child { margin-bottom: 16px; }
+
+footer {
+  margin: 48px auto 32px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-muted);
+  font-size: 15px;
+}
+footer a { margin-right: 16px; }
+
+@media (max-width: 480px) {
+  .masthead h1 { font-size: 40px; }
+  .masthead .tagline { font-size: 20px; }
+}
