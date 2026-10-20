@@ -58,9 +58,9 @@
     </section>
 
     <div class="actions">
-      <a class="button primary" id="remind" href="#">Add a reminder</a>
-      <a class="button plain" id="google" href="#" hidden rel="noopener" target="_blank">Add it to Google Calendar</a>
-      <a class="button plain" id="map" href="#" hidden rel="noopener" target="_blank">Open the start in Maps</a>
+      <a class="button primary" id="remind" hidden>Add a reminder</a>
+      <a class="button plain" id="google" hidden rel="noopener" target="_blank">Add it to Google Calendar</a>
+      <a class="button plain" id="map" hidden rel="noopener" target="_blank">Open the start in Maps</a>
     </div>
 
     <section class="card" id="startCard" hidden aria-labelledby="startTitle">
@@ -88,36 +88,43 @@
 <script>
 (function () {
   "use strict";
-  var MAX = 400;
+  var MAX = 600;
 
+  // Text from the link, trimmed, and marked when it had to be cut.
   function text(value) {
-    return typeof value === "string" && value.trim() ? value.trim().slice(0, MAX) : null;
+    if (typeof value !== "string" || !value.trim()) return null;
+    var chars = Array.from(value.trim());
+    return chars.length > MAX ? chars.slice(0, MAX).join("") + "…" : chars.join("");
   }
   function num(value) { return typeof value === "number" && isFinite(value) ? value : null; }
 
-  function decode(fragment) {
-    try {
-      var b64 = fragment.replace(/-/g, "+").replace(/_/g, "/");
-      while (b64.length % 4) b64 += "=";
-      var binary = atob(b64);
-      var bytes = new Uint8Array(binary.length);
-      for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      var card = JSON.parse(new TextDecoder("utf-8").decode(bytes));
-      if (!card || typeof card !== "object") return null;
-      var plan = {
-        version: num(card.v), where: text(card.d), route: text(card.r), people: num(card.p),
-        back: num(card.b), offset: num(card.z), hours: num(card.h), car: text(card.c), notes: text(card.n),
-        number: text(card.e), country: text(card.k), lat: num(card.la), lon: num(card.lo),
-        accuracy: num(card.a), grid: text(card.g)
-      };
-      if (plan.back === null || plan.number === null) return null;
-      if (plan.offset === null || Math.abs(plan.offset) > 18 * 60) plan.offset = 0;
-      if (plan.hours === null || plan.hours < 0 || plan.hours > 24) plan.hours = 2;
-      if (plan.lat !== null && (Math.abs(plan.lat) > 90 || plan.lon === null || Math.abs(plan.lon) > 180)) { plan.lat = null; plan.lon = null; }
-      return plan;
-    } catch (e) {
-      return null;
-    }
+  function fromBase64url(fragment) {
+    var b64 = fragment.replace(/-/g, "+").replace(/_/g, "/");
+    while (b64.length % 4) b64 += "=";
+    var binary = atob(b64);
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return JSON.parse(new TextDecoder("utf-8").decode(bytes));
+  }
+  function toBase64url(object) {
+    var bytes = new TextEncoder().encode(JSON.stringify(object)), binary = "";
+    for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  function decode(card) {
+    if (!card || typeof card !== "object") return null;
+    var plan = {
+      where: text(card.d), route: text(card.r), people: num(card.p),
+      back: num(card.b), offset: num(card.z), hours: num(card.h), car: text(card.c), notes: text(card.n),
+      number: text(card.e), country: text(card.k), lat: num(card.la), lon: num(card.lo),
+      accuracy: num(card.a), grid: text(card.g)
+    };
+    if (plan.back === null || plan.number === null) return null;
+    if (plan.offset === null || Math.abs(plan.offset) > 18 * 60) plan.offset = 0;
+    if (plan.hours === null || plan.hours < 0 || plan.hours > 24) plan.hours = 2;
+    if (plan.lat !== null && (Math.abs(plan.lat) > 90 || plan.lon === null || Math.abs(plan.lon) > 180)) { plan.lat = null; plan.lon = null; }
+    return plan;
   }
 
   // The walker's own clock: the instant, shifted by their offset, read as UTC.
@@ -128,21 +135,32 @@
   function mine(seconds, options) { return new Intl.DateTimeFormat(undefined, options).format(new Date(seconds * 1000)); }
   var TIME = { timeStyle: "short" };
   var DAY = { weekday: "short", day: "numeric", month: "short" };
+  var WEEKDAY = { weekday: "short" };
 
   function sameClock(seconds, offset) { return -new Date(seconds * 1000).getTimezoneOffset() === offset; }
+  // "6:00 pm", or, for someone in another time zone, "6:00 pm their time (Fri 11:00 pm yours)":
+  // with the reader's own day whenever it isn't the walker's.
   function when(seconds, offset) {
     var out = theirs(seconds, offset, TIME);
-    if (!sameClock(seconds, offset)) out += " their time (" + mine(seconds, TIME) + " yours)";
-    return out;
+    if (sameClock(seconds, offset)) return out;
+    var day = theirs(seconds, offset, WEEKDAY) === mine(seconds, WEEKDAY) ? "" : mine(seconds, WEEKDAY) + " ";
+    return out + " their time (" + day + mine(seconds, TIME) + " yours)";
   }
 
+  // A calendar file: one event from "back by" to the time to call, with an alert at each.
+  // Lines are folded at 75 bytes, never inside a character.
   function ics(plan, deadline, link) {
     function stamp(seconds) { return new Date(seconds * 1000).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, ""); }
-    function esc(value) { return String(value).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n"); }
+    function esc(value) { return String(value).replace(/\\/g, "\\\\").replace(/;/g, "\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n"); }
+    var encoder = new TextEncoder();
     function fold(line) {
-      var out = [], rest = line;
-      while (rest.length > 74) { out.push(rest.slice(0, 74)); rest = " " + rest.slice(74); }
-      out.push(rest);
+      var out = [], current = "", size = 0;
+      Array.from(line).forEach(function (ch) {
+        var bytes = encoder.encode(ch).length;
+        if (size + bytes > 75) { out.push(current); current = " "; size = 1; }
+        current += ch; size += bytes;
+      });
+      out.push(current);
       return out.join("\r\n");
     }
     var whoWhere = plan.where ? "Back from " + plan.where + "?" : "Back from their trip?";
@@ -178,7 +196,8 @@
   // A second link opened in the same tab changes only the part after the #.
   window.addEventListener("hashchange", function () { location.reload(); });
 
-  var plan = decode(location.hash.replace(/^#/, ""));
+  var raw = null, plan = null;
+  try { raw = fromBase64url(location.hash.replace(/^#/, "")); plan = decode(raw); } catch (e) { plan = null; }
   if (!plan) { document.getElementById("empty").hidden = false; return; }
   document.getElementById("plan").hidden = false;
 
@@ -200,39 +219,10 @@
   if (now >= deadline) {
     call.classList.add("now");
     document.getElementById("callBig").textContent = "It's past " + when(deadline, plan.offset) + ". If you still haven't heard from them, call " + number + " now.";
-    document.getElementById("callSmall").textContent = "Tell them someone is overdue, and read them this plan. Don't wait until morning.";
   } else {
     document.getElementById("callBig").textContent = "No word by " + when(deadline, plan.offset) + "? Call " + number + ".";
-    document.getElementById("callSmall").textContent = "Tell them someone is overdue, and read them this plan. Don't wait until morning.";
   }
-
-  var remind = document.getElementById("remind");
-  if (now < deadline) {
-    var file = ics(plan, deadline, location.href);
-    remind.href = "data:text/calendar;charset=utf-8," + encodeURIComponent(file);
-    if (apple) {
-      // Safari ignores a downloadable data: link; it opens a calendar file it's sent to,
-      // and offers to add the event.
-      remind.addEventListener("click", function (event) {
-        event.preventDefault();
-        location.href = URL.createObjectURL(new Blob([file], { type: "text/calendar" }));
-      });
-    } else {
-      remind.setAttribute("download", "trip-plan.ics");
-    }
-    remind.textContent = "Add a reminder for " + theirs(deadline, plan.offset, TIME);
-    if (!apple) {
-      var g = document.getElementById("google");
-      var fmt = function (s) { return new Date(s * 1000).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, ""); };
-      g.href = "https://calendar.google.com/calendar/render?action=TEMPLATE"
-        + "&text=" + encodeURIComponent(plan.where ? "Back from " + plan.where + "?" : "Back from their trip?")
-        + "&dates=" + fmt(plan.back) + "/" + fmt(deadline)
-        + "&details=" + encodeURIComponent("No word by " + theirs(deadline, plan.offset, TIME) + "? Call " + number + " and read them the trip plan: " + location.href);
-      g.hidden = false;
-    }
-  } else {
-    remind.hidden = true;
-  }
+  document.getElementById("callSmall").textContent = "Tell them someone is overdue, and read them this plan. Don't wait until morning.";
 
   if (plan.lat !== null) {
     var map = document.getElementById("map");
@@ -242,6 +232,42 @@
     document.getElementById("startCard").hidden = false;
     document.getElementById("latlon").textContent = "Lat/long " + plan.lat.toFixed(5) + ", " + plan.lon.toFixed(5) + (plan.accuracy !== null ? " (± " + plan.accuracy + " m)" : "");
     if (plan.grid) { var grid = document.getElementById("grid"); grid.textContent = plan.grid; grid.hidden = false; }
+  }
+
+  // The reminder, while there's still time to set one. Calendars get the plan without its
+  // notes (which may be medical): the link in them leaves the notes out too.
+  if (now < deadline) {
+    try {
+      var lean = Object.assign({}, raw);
+      delete lean.n;
+      var leanLink = location.origin + location.pathname + "#" + toBase64url(lean);
+      var file = ics(plan, deadline, leanLink);
+      var remind = document.getElementById("remind");
+      remind.textContent = "Add a reminder for " + theirs(deadline, plan.offset, TIME);
+      if (apple) {
+        // Safari ignores a downloadable data: link; it opens a calendar file it's sent to,
+        // and offers to add the event.
+        remind.href = "#";
+        remind.addEventListener("click", function (event) {
+          event.preventDefault();
+          location.href = URL.createObjectURL(new Blob([file], { type: "text/calendar" }));
+        });
+      } else {
+        remind.href = "data:text/calendar;charset=utf-8," + encodeURIComponent(file);
+        remind.setAttribute("download", "trip-plan.ics");
+        // Google's template can't carry alerts, so its event is the time to call itself.
+        var g = document.getElementById("google");
+        var fmt = function (s) { return new Date(s * 1000).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, ""); };
+        g.href = "https://calendar.google.com/calendar/render?action=TEMPLATE"
+          + "&text=" + encodeURIComponent("No word? Call " + plan.number + " now" + (plan.where ? " (" + plan.where + ")" : ""))
+          + "&dates=" + fmt(deadline) + "/" + fmt(deadline + 1800)
+          + "&details=" + encodeURIComponent("They planned to be back by " + theirs(plan.back, plan.offset, TIME) + ". No word? Call " + number + " and read them the trip plan: " + leanLink);
+        g.hidden = false;
+      }
+      remind.hidden = false;
+    } catch (e) {
+      // Without a reminder the rest still stands: the plan, the time to call, the map.
+    }
   }
 })();
 </script>
